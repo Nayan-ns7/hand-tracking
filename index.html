@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Neon Hand Tracker</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      background-color: #050510;
+      color: white;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      overflow: hidden;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      -webkit-tap-highlight-color: transparent;
+    }
+    
+    #videoElement {
+      display: none; /* Hidden, we only render the canvas */
+    }
+    
+    #outputCanvas {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      transform: scaleX(-1); /* Mirror by default for front camera */
+    }
+    
+    .loading {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      font-size: 1.5rem;
+      font-weight: 600;
+      color: #00ffff;
+      text-shadow: 0 0 10px #00ffff, 0 0 20px #00ffff;
+      z-index: 10;
+      pointer-events: none;
+      letter-spacing: 2px;
+      text-align: center;
+    }
+    .ui-container {
+      position: absolute;
+      bottom: 40px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      gap: 15px;
+      z-index: 20;
+    }
+    
+    button {
+      background: rgba(10, 10, 30, 0.7);
+      border: 1px solid #00ffff;
+      color: #00ffff;
+      padding: 12px 24px;
+      border-radius: 30px;
+      font-size: 1rem;
+      font-weight: bold;
+      cursor: pointer;
+      backdrop-filter: blur(5px);
+      box-shadow: 0 0 15px rgba(0, 255, 255, 0.4);
+      transition: all 0.3s ease;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+    
+    button:hover {
+      background: #00ffff;
+      color: #000;
+      box-shadow: 0 0 25px rgba(0, 255, 255, 0.9);
+      transform: scale(1.05);
+    }
+  </style>
+  
+  <!-- MediaPipe dependencies loaded from CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+</head>
+<body>
+  <div id="loadingText" class="loading">Loading AI Models...</div>
+  <video id="videoElement" playsinline autoplay></video>
+  <canvas id="outputCanvas"></canvas>
+  
+  <div class="ui-container">
+    <button id="switchCameraBtn">Switch Camera</button>
+  </div>
+  <script>
+    const videoElement = document.getElementById('videoElement');
+    const canvasElement = document.getElementById('outputCanvas');
+    const canvasCtx = canvasElement.getContext('2d');
+    const loadingText = document.getElementById('loadingText');
+    const switchCameraBtn = document.getElementById('switchCameraBtn');
+    let currentFacingMode = 'user';
+    let currentStream = null;
+    let isProcessing = false;
+    let lastVideoTime = -1;
+    // Standard hand connections (21 landmarks)
+    const HAND_CONNECTIONS = [
+      [0, 1], [1, 2], [2, 3], [3, 4],       // Thumb
+      [0, 5], [5, 6], [6, 7], [7, 8],       // Index
+      [5, 9], [9, 10], [10, 11], [11, 12],  // Middle
+      [9, 13], [13, 14], [14, 15], [15, 16],// Ring
+      [13, 17], [17, 18], [18, 19], [19, 20],// Pinky
+      [0, 17]                               // Palm base connection
+    ];
+    // Initialize MediaPipe Hands
+    const hands = new Hands({locateFile: (file) => {
+      return `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`;
+    }});
+    
+    hands.setOptions({
+      maxNumHands: 2,
+      modelComplexity: 1,
+      minDetectionConfidence: 0.6,
+      minTrackingConfidence: 0.6
+    });
+    hands.onResults(onResults);
+    // Update mirroring logic for canvas based on camera perspective
+    function updateMirroring() {
+      if (currentFacingMode === 'user') {
+        canvasElement.style.transform = 'scaleX(-1)';
+      } else {
+        canvasElement.style.transform = 'scaleX(1)';
+      }
+    }
+    async function startCamera() {
+      if (currentStream) {
+        currentStream.getTracks().forEach(track => track.stop());
+      }
+      
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            width: { ideal: 1280 },
+            height: { ideal: 720 },
+            facingMode: currentFacingMode
+          }
+        });
+        currentStream = stream;
+        videoElement.srcObject = stream;
+        
+        await videoElement.play();
+        updateMirroring();
+        
+        // Start processing loop
+        requestAnimationFrame(renderLoop);
+      } catch (err) {
+        console.error("Error accessing camera:", err);
+        loadingText.innerText = "Camera Access Required";
+        loadingText.style.color = "#ff0055";
+        loadingText.style.textShadow = "0 0 15px #ff0055";
+      }
+    }
+    // Manual processing loop using requestAnimationFrame for optimal low-latency syncing
+    async function renderLoop() {
+      if (videoElement.readyState >= 2 && videoElement.videoWidth && videoElement.videoHeight && !isProcessing) {
+        if (videoElement.currentTime !== lastVideoTime) {
+          lastVideoTime = videoElement.currentTime;
+          isProcessing = true;
+          
+          if (canvasElement.width !== videoElement.videoWidth) {
+            canvasElement.width = videoElement.videoWidth;
+            canvasElement.height = videoElement.videoHeight;
+          }
+          
+          try {
+            await hands.send({image: videoElement});
+          } catch(e) {
+            console.error("Hands tracking error:", e);
+          }
+          isProcessing = false;
+        }
+      }
+      requestAnimationFrame(renderLoop);
+    }
+    function onResults(results) {
+      if (loadingText.style.display !== 'none') {
+        loadingText.style.display = 'none';
+      }
+      canvasCtx.save();
+      canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+      // Darken the background video slightly to make neon pop out
+      canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
+      canvasCtx.fillStyle = 'rgba(10, 10, 15, 0.75)';
+      canvasCtx.fillRect(0, 0, canvasElement.width, canvasElement.height);
+      if (results.multiHandLandmarks && results.multiHandedness) {
+        const parsedHands = [];
+        // Draw each detected hand
+        for (let i = 0; i < results.multiHandLandmarks.length; i++) {
+          const landmarks = results.multiHandLandmarks[i];
+          const classification = results.multiHandedness[i];
+          
+          // Separate colors for each hand (Cyan / Purple)
+          const isRight = classification.label === 'Right';
+          const primaryColor = isRight ? '#00ffff' : '#ff00ff';
+          
+          parsedHands.push(landmarks);
+          // Render Connections (Neon lines)
+          canvasCtx.beginPath();
+          HAND_CONNECTIONS.forEach(([startIdx, endIdx]) => {
+            const p1 = landmarks[startIdx];
+            const p2 = landmarks[endIdx];
+            canvasCtx.moveTo(p1.x * canvasElement.width, p1.y * canvasElement.height);
+            canvasCtx.lineTo(p2.x * canvasElement.width, p2.y * canvasElement.height);
+          });
+          
+          // Apply line glow
+          canvasCtx.strokeStyle = primaryColor;
+          canvasCtx.lineWidth = 4;
+          canvasCtx.shadowColor = primaryColor;
+          canvasCtx.shadowBlur = 15;
+          canvasCtx.stroke();
+          
+          // Render Joints (Neon boxes)
+          canvasCtx.fillStyle = '#ffffff';
+          canvasCtx.shadowColor = primaryColor;
+          canvasCtx.shadowBlur = 25;
+          
+          const boxSize = 8;
+          landmarks.forEach((point) => {
+            const px = point.x * canvasElement.width;
+            const py = point.y * canvasElement.height;
+            canvasCtx.fillRect(px - boxSize/2, py - boxSize/2, boxSize, boxSize);
+          });
+        }
+        // Draw connections between the two hands (corresponding fingertips)
+        if (parsedHands.length >= 2) {
+          const hand1 = parsedHands[0];
+          const hand2 = parsedHands[1];
+          const fingertips = [4, 8, 12, 16, 20]; // Thumb, Index, Middle, Ring, Pinky
+          
+          canvasCtx.beginPath();
+          fingertips.forEach((tipIdx) => {
+            const p1 = hand1[tipIdx];
+            const p2 = hand2[tipIdx];
+            if (p1 && p2) {
+              canvasCtx.moveTo(p1.x * canvasElement.width, p1.y * canvasElement.height);
+              canvasCtx.lineTo(p2.x * canvasElement.width, p2.y * canvasElement.height);
+            }
+          });
+          
+          // Distinct Neon color for bridging connections
+          const connectColor = '#00ffaa'; // Bright Mint Green
+          canvasCtx.strokeStyle = connectColor;
+          canvasCtx.lineWidth = 3;
+          canvasCtx.shadowColor = connectColor;
+          canvasCtx.shadowBlur = 20;
+          canvasCtx.stroke();
+        }
+      }
+      canvasCtx.restore();
+    }
+    switchCameraBtn.addEventListener('click', () => {
+      currentFacingMode = currentFacingMode === 'user' ? 'environment' : 'user';
+      loadingText.style.display = 'block';
+      loadingText.innerText = "Switching camera...";
+      startCamera();
+    });
+    // Boot everything up
+    hands.initialize().then(() => {
+      startCamera();
+    });
+  </script>
+</body>
+</html>
