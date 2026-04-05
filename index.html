@@ -212,7 +212,7 @@
           
           // Apply line glow
           canvasCtx.strokeStyle = primaryColor;
-          canvasCtx.lineWidth = 4;
+          canvasCtx.lineWidth = 1;
           canvasCtx.shadowColor = primaryColor;
           canvasCtx.shadowBlur = 15;
           canvasCtx.stroke();
@@ -222,7 +222,7 @@
           canvasCtx.shadowColor = primaryColor;
           canvasCtx.shadowBlur = 25;
           
-          const boxSize = 8;
+          const boxSize = 2;
           landmarks.forEach((point) => {
             const px = point.x * canvasElement.width;
             const py = point.y * canvasElement.height;
@@ -248,7 +248,7 @@
           // Distinct Neon color for bridging connections
           const connectColor = '#00ffaa'; // Bright Mint Green
           canvasCtx.strokeStyle = connectColor;
-          canvasCtx.lineWidth = 3;
+          canvasCtx.lineWidth = 1;
           canvasCtx.shadowColor = connectColor;
           canvasCtx.shadowBlur = 20;
           canvasCtx.stroke();
