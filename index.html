@@ -229,30 +229,6 @@
             canvasCtx.fillRect(px - boxSize/2, py - boxSize/2, boxSize, boxSize);
           });
         }
-        // Draw connections between the two hands (corresponding fingertips)
-        if (parsedHands.length >= 2) {
-          const hand1 = parsedHands[0];
-          const hand2 = parsedHands[1];
-          const fingertips = [4, 8, 12, 16, 20]; // Thumb, Index, Middle, Ring, Pinky
-          
-          canvasCtx.beginPath();
-          fingertips.forEach((tipIdx) => {
-            const p1 = hand1[tipIdx];
-            const p2 = hand2[tipIdx];
-            if (p1 && p2) {
-              canvasCtx.moveTo(p1.x * canvasElement.width, p1.y * canvasElement.height);
-              canvasCtx.lineTo(p2.x * canvasElement.width, p2.y * canvasElement.height);
-            }
-          });
-          
-          // Distinct Neon color for bridging connections
-          const connectColor = '#00ffaa'; // Bright Mint Green
-          canvasCtx.strokeStyle = connectColor;
-          canvasCtx.lineWidth = 1;
-          canvasCtx.shadowColor = connectColor;
-          canvasCtx.shadowBlur = 20;
-          canvasCtx.stroke();
-        }
       }
       canvasCtx.restore();
     }
