@@ -300,12 +300,22 @@
       startCamera();
     });
     // Boot everything up
-    Promise.all([
-      hands.initialize(),
-      faceMesh.initialize()
-    ]).then(() => {
-      startCamera();
-    });
+    async function initModels() {
+      try {
+        loadingText.innerText = "Loading Hands AI...";
+        await hands.initialize();
+        loadingText.innerText = "Loading Face AI...";
+        await faceMesh.initialize();
+        loadingText.innerText = "Starting Camera...";
+        startCamera();
+      } catch(err) {
+        console.error(err);
+        loadingText.innerText = "Error Loading: " + err.message;
+        loadingText.style.color = "red";
+        loadingText.style.textShadow = "0 0 15px red";
+      }
+    }
+    initModels();
   </script>
 </body>
 </html>
