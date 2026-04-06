@@ -80,7 +80,6 @@
   
   <!-- MediaPipe dependencies loaded from CDN -->
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js" crossorigin="anonymous"></script>
 </head>
 <body>
@@ -99,38 +98,12 @@
     const switchCameraBtn = document.getElementById('switchCameraBtn');
     let currentFacingMode = 'user';
     let currentStream = null;
-    let isProcessingHands = false;
     let isProcessingFace = false;
     let latestVideoFrame = null;
-    let latestHandsResults = null;
     let latestFaceResults = null;
     let renderRequested = false;
     let lastVideoTime = -1;
-    // Standard hand connections (21 landmarks)
-    const HAND_CONNECTIONS = [
-      [0, 1], [1, 2], [2, 3], [3, 4],       // Thumb
-      [0, 5], [5, 6], [6, 7], [7, 8],       // Index
-      [5, 9], [9, 10], [10, 11], [11, 12],  // Middle
-      [9, 13], [13, 14], [14, 15], [15, 16],// Ring
-      [13, 17], [17, 18], [18, 19], [19, 20],// Pinky
-      [0, 17]                               // Palm base connection
-    ];
-    // Initialize MediaPipe Hands
-    const hands = new Hands({locateFile: (file) => {
-      return `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`;
-    }});
-    
-    hands.setOptions({
-      maxNumHands: 2,
-      modelComplexity: 1,
-      minDetectionConfidence: 0.6,
-      minTrackingConfidence: 0.6
-    });
-    hands.onResults((results) => {
-      latestVideoFrame = results.image;
-      latestHandsResults = results;
-      requestRender();
-    });
+
 
     // Initialize MediaPipe Face Mesh
     const faceMesh = new FaceMesh({locateFile: (file) => {
@@ -202,12 +175,6 @@
             canvasElement.height = videoElement.videoHeight;
           }
           
-          // Process Hands asynchronously
-          if (!isProcessingHands) {
-            isProcessingHands = true;
-            hands.send({image: videoElement}).catch(e => console.error(e)).finally(() => isProcessingHands = false);
-          }
-          
           // Process Face Mesh asynchronously
           if (!isProcessingFace) {
             isProcessingFace = true;
@@ -253,44 +220,6 @@
           }
         }
       }
-
-      // Draw Hand Landmarks
-      if (latestHandsResults && latestHandsResults.multiHandLandmarks && latestHandsResults.multiHandedness) {
-        for (let i = 0; i < latestHandsResults.multiHandLandmarks.length; i++) {
-          const landmarks = latestHandsResults.multiHandLandmarks[i];
-          const classification = latestHandsResults.multiHandedness[i];
-          
-          const isRight = classification.label === 'Right';
-          const primaryColor = isRight ? '#00ffff' : '#ff00ff';
-          
-          // Render Connections (Neon lines)
-          canvasCtx.beginPath();
-          HAND_CONNECTIONS.forEach(([startIdx, endIdx]) => {
-            const p1 = landmarks[startIdx];
-            const p2 = landmarks[endIdx];
-            canvasCtx.moveTo(p1.x * canvasElement.width, p1.y * canvasElement.height);
-            canvasCtx.lineTo(p2.x * canvasElement.width, p2.y * canvasElement.height);
-          });
-          
-          canvasCtx.strokeStyle = primaryColor;
-          canvasCtx.lineWidth = 1;
-          canvasCtx.shadowColor = primaryColor;
-          canvasCtx.shadowBlur = 15;
-          canvasCtx.stroke();
-          
-          // Render Joints (Neon boxes)
-          canvasCtx.fillStyle = '#ffffff';
-          canvasCtx.shadowColor = primaryColor;
-          canvasCtx.shadowBlur = 25;
-          
-          const boxSize = 2;
-          landmarks.forEach((point) => {
-            const px = point.x * canvasElement.width;
-            const py = point.y * canvasElement.height;
-            canvasCtx.fillRect(px - boxSize/2, py - boxSize/2, boxSize, boxSize);
-          });
-        }
-      }
       canvasCtx.restore();
     }
     switchCameraBtn.addEventListener('click', () => {
@@ -302,8 +231,6 @@
     // Boot everything up
     async function initModels() {
       try {
-        loadingText.innerText = "Loading Hands AI...";
-        await hands.initialize();
         loadingText.innerText = "Loading Face AI...";
         await faceMesh.initialize();
         loadingText.innerText = "Starting Camera...";
