@@ -81,6 +81,7 @@
   <!-- MediaPipe dependencies loaded from CDN -->
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js" crossorigin="anonymous"></script>
 </head>
 <body>
   <div id="loadingText" class="loading">Loading AI Models...</div>
@@ -98,7 +99,12 @@
     const switchCameraBtn = document.getElementById('switchCameraBtn');
     let currentFacingMode = 'user';
     let currentStream = null;
-    let isProcessing = false;
+    let isProcessingHands = false;
+    let isProcessingFace = false;
+    let latestVideoFrame = null;
+    let latestHandsResults = null;
+    let latestFaceResults = null;
+    let renderRequested = false;
     let lastVideoTime = -1;
     // Standard hand connections (21 landmarks)
     const HAND_CONNECTIONS = [
@@ -120,7 +126,28 @@
       minDetectionConfidence: 0.6,
       minTrackingConfidence: 0.6
     });
-    hands.onResults(onResults);
+    hands.onResults((results) => {
+      latestVideoFrame = results.image;
+      latestHandsResults = results;
+      requestRender();
+    });
+
+    // Initialize MediaPipe Face Mesh
+    const faceMesh = new FaceMesh({locateFile: (file) => {
+      return `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`;
+    }});
+    
+    faceMesh.setOptions({
+      maxNumFaces: 1,
+      refineLandmarks: true,
+      minDetectionConfidence: 0.6,
+      minTrackingConfidence: 0.6
+    });
+    faceMesh.onResults((results) => {
+      latestVideoFrame = results.image;
+      latestFaceResults = results;
+      requestRender();
+    });
     // Update mirroring logic for canvas based on camera perspective
     function updateMirroring() {
       if (currentFacingMode === 'user') {
@@ -157,50 +184,85 @@
         loadingText.style.textShadow = "0 0 15px #ff0055";
       }
     }
+    function requestRender() {
+      if (!renderRequested) {
+        renderRequested = true;
+        requestAnimationFrame(renderUnified);
+      }
+    }
+
     // Manual processing loop using requestAnimationFrame for optimal low-latency syncing
-    async function renderLoop() {
-      if (videoElement.readyState >= 2 && videoElement.videoWidth && videoElement.videoHeight && !isProcessing) {
+    function renderLoop() {
+      if (videoElement.readyState >= 2 && videoElement.videoWidth && videoElement.videoHeight) {
         if (videoElement.currentTime !== lastVideoTime) {
           lastVideoTime = videoElement.currentTime;
-          isProcessing = true;
           
           if (canvasElement.width !== videoElement.videoWidth) {
             canvasElement.width = videoElement.videoWidth;
             canvasElement.height = videoElement.videoHeight;
           }
           
-          try {
-            await hands.send({image: videoElement});
-          } catch(e) {
-            console.error("Hands tracking error:", e);
+          // Process Hands asynchronously
+          if (!isProcessingHands) {
+            isProcessingHands = true;
+            hands.send({image: videoElement}).catch(e => console.error(e)).finally(() => isProcessingHands = false);
           }
-          isProcessing = false;
+          
+          // Process Face Mesh asynchronously
+          if (!isProcessingFace) {
+            isProcessingFace = true;
+            faceMesh.send({image: videoElement}).catch(e => console.error(e)).finally(() => isProcessingFace = false);
+          }
         }
       }
       requestAnimationFrame(renderLoop);
     }
-    function onResults(results) {
+
+    function renderUnified() {
+      renderRequested = false;
       if (loadingText.style.display !== 'none') {
         loadingText.style.display = 'none';
       }
+      if (!latestVideoFrame) return;
+
       canvasCtx.save();
       canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
-      // Darken the background video slightly to make neon pop out
-      canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
+      
+      // Background Image with dark overlay
+      canvasCtx.drawImage(latestVideoFrame, 0, 0, canvasElement.width, canvasElement.height);
       canvasCtx.fillStyle = 'rgba(10, 10, 15, 0.75)';
       canvasCtx.fillRect(0, 0, canvasElement.width, canvasElement.height);
-      if (results.multiHandLandmarks && results.multiHandedness) {
-        const parsedHands = [];
-        // Draw each detected hand
-        for (let i = 0; i < results.multiHandLandmarks.length; i++) {
-          const landmarks = results.multiHandLandmarks[i];
-          const classification = results.multiHandedness[i];
+
+      // Draw Face Mesh (Iron Man UI aesthetic)
+      if (latestFaceResults && latestFaceResults.multiFaceLandmarks) {
+        for (const landmarks of latestFaceResults.multiFaceLandmarks) {
+          canvasCtx.beginPath();
+          if (typeof FACEMESH_TESSELLATION !== 'undefined') {
+            FACEMESH_TESSELLATION.forEach(([startIdx, endIdx]) => {
+              const p1 = landmarks[startIdx];
+              const p2 = landmarks[endIdx];
+              canvasCtx.moveTo(p1.x * canvasElement.width, p1.y * canvasElement.height);
+              canvasCtx.lineTo(p2.x * canvasElement.width, p2.y * canvasElement.height);
+            });
+            // High-poly, very thin neon blue lines
+            canvasCtx.strokeStyle = 'rgba(0, 229, 255, 0.4)'; 
+            canvasCtx.lineWidth = 0.5;
+            canvasCtx.shadowColor = 'rgba(0, 229, 255, 0.8)';
+            canvasCtx.shadowBlur = 4;
+            canvasCtx.stroke();
+          }
+        }
+      }
+
+      // Draw Hand Landmarks
+      if (latestHandsResults && latestHandsResults.multiHandLandmarks && latestHandsResults.multiHandedness) {
+        for (let i = 0; i < latestHandsResults.multiHandLandmarks.length; i++) {
+          const landmarks = latestHandsResults.multiHandLandmarks[i];
+          const classification = latestHandsResults.multiHandedness[i];
           
-          // Separate colors for each hand (Cyan / Purple)
           const isRight = classification.label === 'Right';
           const primaryColor = isRight ? '#00ffff' : '#ff00ff';
           
-          parsedHands.push(landmarks);
           // Render Connections (Neon lines)
           canvasCtx.beginPath();
           HAND_CONNECTIONS.forEach(([startIdx, endIdx]) => {
@@ -210,7 +272,6 @@
             canvasCtx.lineTo(p2.x * canvasElement.width, p2.y * canvasElement.height);
           });
           
-          // Apply line glow
           canvasCtx.strokeStyle = primaryColor;
           canvasCtx.lineWidth = 1;
           canvasCtx.shadowColor = primaryColor;
@@ -239,7 +300,10 @@
       startCamera();
     });
     // Boot everything up
-    hands.initialize().then(() => {
+    Promise.all([
+      hands.initialize(),
+      faceMesh.initialize()
+    ]).then(() => {
       startCamera();
     });
   </script>
