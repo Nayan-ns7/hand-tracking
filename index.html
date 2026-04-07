@@ -204,8 +204,8 @@
       if (latestFaceResults && latestFaceResults.multiFaceLandmarks) {
         for (const landmarks of latestFaceResults.multiFaceLandmarks) {
           canvasCtx.beginPath();
-          if (typeof FACEMESH_TESSELLATION !== 'undefined') {
-            FACEMESH_TESSELLATION.forEach(([startIdx, endIdx]) => {
+          if (typeof FACEMESH_TESSELATION !== 'undefined') {
+            FACEMESH_TESSELATION.forEach(([startIdx, endIdx]) => {
               const p1 = landmarks[startIdx];
               const p2 = landmarks[endIdx];
               canvasCtx.moveTo(p1.x * canvasElement.width, p1.y * canvasElement.height);
